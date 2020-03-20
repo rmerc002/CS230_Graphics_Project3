@@ -14,17 +14,20 @@ class Watercolor:
         # cv2.imshow("paper",self.h)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
-        self.M = np.ones((rows,cols))
+        self.M = np.zeros((rows,cols))
         self.u = np.zeros((rows,cols+1))
         self.v = np.zeros((rows+1,cols))
         self.p = np.zeros((rows,cols))
-        self.g = np.ones((rows,cols,numPigments))
+        self.g = np.zeros((rows,cols,numPigments))
         self.d = np.zeros((rows,cols,numPigments))
         self.s = np.zeros((rows,cols))
+        cmin = 0.1
+        cmax = 0.3
+        self.c = self.h*(cmax-cmin)+cmin
 
-        self.mu = 0.1
+        self.mu = -0.1
         # self.kappa = 0.01
-        self.kappa = 0.1
+        self.kappa = 0.5
 
         self.im = np.zeros((rows,cols,3))
 
@@ -43,7 +46,7 @@ class Watercolor:
                                             [0.08, 0.11, 0.07, 1.250, 0.420, 1.430, 0.06, 1.0, 0.08]])
 
 
-    def MainLoop(self):
+    def MainLoop(self,inputPath):
         t=0
         # with np.printoptions(precision=3, suppress=True):
         #     print("temp u at t={}, sum={}: \n{}".format(t,self.u.sum(),self.u))
@@ -52,27 +55,25 @@ class Watercolor:
         for t in range(self.T):
             print("Iterations with t={}/{}".format(t,self.T))
             if t > 0:
-                # print("before move water u: {}".format(self.u[0,:]))
+
                 self.MoveWater()
-                # print("move water u: {}".format(self.u[0,:]))
                 self.MovePigment()
-                # print("move pigment u: {}".format(self.u[0,:]))
                 self.TransferPigment()
-                # print("transfer pigment u: {}".format(self.u[0,:]))
                 self.SimulateCapillaryFlow()
+
                 # print("simulatecapillaryflow u: {}".format(self.u[0,:]))
             # with np.printoptions(precision=3, suppress=True):
             #     print("temp u at t={}, sum={}: \n{}".format(t,self.u.sum(),self.u))
             #     # print("temp v at t={}: \n{}".format(t,self.v))
             #     print("###############################")
-
-            # ushow = self.u
-            # ushow = self.u[:,:-1] * self.v[:-1,:]
-            # ushow = np.minimum(ushow,np.ones(ushow.shape))
-            # ushow = np.maximum(ushow,-1*np.ones(ushow.shape))
-            # ushow = (ushow+1)/2
-            # cv2.imshow("u velocity",cv2.resize(ushow,(500,500)))
-            # cv2.waitKey(300)
+            #
+            # ushow = self.s
+            ushow = self.u[:,:-1] * self.v[:-1,:]
+            ushow = np.minimum(ushow,np.ones(ushow.shape))
+            ushow = np.maximum(ushow,-1*np.ones(ushow.shape))
+            ushow = (ushow+1)/2
+            cv2.imshow("u velocity",cv2.resize(ushow,(500,500)))
+            cv2.waitKey(300)
 
             # with np.printoptions(precision=12, suppress=True):
             #     print("Image rows:")
@@ -80,15 +81,15 @@ class Watercolor:
             #         print(self.u[r,:])
                 # cv2.destroyAllWindows()
 
-            self.im = self.RenderLayer()
+            # self.im = self.RenderLayer()
+            # cv2.imshow("rendered image",cv2.resize(self.im,(500,500)))
+            # cv2.waitKey(300)
+            # self.WriteImageData(self.im, inputPath,"T_{:02d}".format(t))
+
             # with np.printoptions(precision=1, suppress=True):
             #     print("Image rows:")
             #     for r in range(self.rows):
             #         print("t={},r={},\n{}".format(t,r,self.im[r,:]))
-            cv2.imshow("rendered image",cv2.resize(self.im,(500,500)))
-            # cv2.imshow("u velocity",self.im)
-
-            cv2.waitKey(300)
 
 
         # with np.printoptions(precision=3, suppress=True):
@@ -142,7 +143,8 @@ class Watercolor:
                         temp4 = np.mean([self.u[r,c],self.u[r+1,c]]) * np.mean([self.v[r,c],self.v[r,c+1]])
                     else:
                         temp4 = 0
-                    A = temp1 - temp2 + temp3 - temp4
+                    A = temp1 - temp2
+                    A += temp3 - temp4
 
                     if c < self.cols-1:
                         temp1 = self.u[r,c+1]
@@ -164,12 +166,18 @@ class Watercolor:
                     B = temp1 + temp2 + temp3 + temp4 - 4*temp5
                     # B = 0
                     A = 0
-                    tempPressure = self.p[r,c]
+                    tempPressurep1 = 0
+                    tempPressuren1 = 0
                     if c < self.cols-1:
-                        tempPressure -= self.p[r,c+1]
+                        tempPressurep1 = self.p[r,c+1] - self.p[r,c]
+                    if c > 0:
+                        tempPressuren1 = self.p[r,c] - self.p[r,c-1]
+
+                    tempPressure = -(tempPressurep1 + tempPressuren1)/2
+                    # tempPressure = -tempPressurep1
                     u[r,c] = temp5 + delT*(A + self.mu*B + tempPressure - self.kappa*temp5)
                     # u[r,c] = temp5 + delT*A
-                    # u[r,c] = temp5 + delT*self.mu*B
+                    # u[r,c] = temp5 + delT*(self.mu*B + tempPressure - self.kappa*temp5)
 
 
                     if r > 0:
@@ -190,7 +198,8 @@ class Watercolor:
                         temp4 = np.mean([self.v[r,c],self.v[r,c+1]]) * np.mean([self.u[r,c],self.u[r+1,c]])
                     else:
                         temp4 = 0
-                    A = temp1 - temp2 + temp3 - temp4
+                    A = temp1 - temp2
+                    A += temp3 - temp4
 
                     if c < self.cols-1:
                         temp1 = self.v[r,c+1]
@@ -212,13 +221,25 @@ class Watercolor:
                     B = temp1 + temp2 + temp3 + temp4 - 4*temp5
                     # B = 0
                     A = 0
-                    tempPressure = self.p[r,c]
-                    if r < self.rows-1:
-                        tempPressure -= self.p[r+1,c]
+                    # tempPressure = self.p[r,c]
+                    # if r < self.rows-1:
+                    #     tempPressure -= self.p[r+1,c]
+                    tempPressurep1 = 0
+                    tempPressuren1 = 0
+                    if r < self.cols-1:
+                        tempPressurep1 = self.p[r+1,c] - self.p[r,c]
+                    if r > 0:
+                        tempPressuren1 = self.p[r,c] - self.p[r-1,c]
+
+                    tempPressure = -(tempPressurep1 + tempPressuren1)/2
+                    # tempPressure = -tempPressurep1
                     v[r,c] = temp5 + delT*(A + self.mu*B + tempPressure - self.kappa*temp5)
-            self.u = u
-            self.v = v
+                    # v[r,c] = temp5 + delT*(self.mu*B + tempPressure - self.kappa*temp5)
+            self.u = u.copy()
+            self.v = v.copy()
             self.EnforceBoundaryConditions()
+            # with np.printoptions(precision=2, suppress=True):
+            #     print("min u: {}, max u: {},min v: {}, max v: {},sum: {}".format(self.u.min(),self.u.max(),self.v.min(),self.v.max(),np.sum(self.u)+np.sum(self.v)))
         return
 
     def getDelT(self):
@@ -230,15 +251,12 @@ class Watercolor:
 
 
     def EnforceBoundaryConditions(self):
-        for row in range(self.rows):
-            for col in range(self.cols):
-                if self.M[row,col] == 0:
-                    if col > 0 and self.M[row,col-1] == 0:
-                        if col < self.col-1 and self.M[row,col+1] == 0:
-                            self.u[row,col] = 0
-                    if row > 0 and self.M[row-1,col] == 0:
-                        if row < self.row-1 and self.M[row+1,col] == 0:
-                            self.v[row,col] = 0
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.M[r,c] == 0:
+                    self.u[r,c] = 0
+                    self.v[r,c] = 0
+                    self.p[r,c] = 0
 
     def RelaxDivergence(self):
         N = 50
@@ -273,54 +291,62 @@ class Watercolor:
 
 
     def FlowOutward(self):
-
-        pass
+        K = 10
+        eta = 0.1
+        kernel = np.ones((K,K),np.float32)/(K*K)
+        Mp = cv2.filter2D(self.M,-1,kernel)
+        self.p -= eta*(1-Mp)*self.M
 
 
     def MovePigment(self):
         delT = self.getDelT()
+        # self.u = -1*self.u
+        # self.v = -1*self.v
         # print("delT: {}".format(delT))
+        print("g size: {}".format(self.g.shape))
         for k in range(self.numPigments):
             for t in np.linspace(0,1,int(np.floor(1/delT))):
                 g = self.g[:,:,k]
-                gp = g
+                gp = g.copy()
                 for r in range(self.rows):
                     for c in range(self.cols):
                         totalOut = 0
-                        if c < self.cols-1:
-                            totalOut += max(0, self.u[r,c+1]*g[r,c])
-                        if c > 0:
-                            totalOut += max(0, -self.u[r,c]*g[r,c])
-                        if r < self.rows-1:
-                            totalOut += max(0, self.v[r+1,c]*g[r,c])
-                        if r > 0:
-                            totalOut += max(0, -self.v[r,c]*g[r,c])
+                        if self.M[r,c] == 1:
+                            if c < self.cols-1 and self.M[r,c+1] == 1:
+                                totalOut += np.maximum(0, self.u[r,c+1]*g[r,c])
+                            if c > 0 and self.M[r,c-1] == 1:
+                                totalOut += np.maximum(0, -1*self.u[r,c]*g[r,c])
+                            if r < self.rows-1 and self.M[r+1,c] == 1:
+                                totalOut += np.maximum(0, self.v[r+1,c]*g[r,c])
+                            if r > 0 and self.M[r-1,c] == 1:
+                                totalOut += np.maximum(0, -1*self.v[r,c]*g[r,c])
 
-                        # totalOut = 0.0001
-                        scaleCorrection = 0.99999
-                        if totalOut > 0:
-                            scaleCorrection = 0.99999*min(1, gp[r,c]/totalOut)
+                            # totalOut = 0.0001
+                            scaleCorrection = 0.99999
+                            if totalOut > 0:
+                                scaleCorrection = 0.99999*min(1, gp[r,c]/totalOut)
 
-                        if c < self.cols-1:
-                            gp[r,c+1] += max(0,self.u[r,c+1]*g[r,c])*scaleCorrection
-                        if c > 0:
-                            gp[r,c-1] += max(0,-self.u[r,c]*g[r,c])*scaleCorrection
-                        if r < self.rows-1:
-                            gp[r+1,c] += max(0,self.v[r+1,c]*g[r,c])*scaleCorrection
-                        if r > 0:
-                            gp[r-1,c] += max(0,-self.v[r,c]*g[r,c])*scaleCorrection
+                            if c < self.cols-1 and self.M[r,c+1] == 1:
+                                gp[r,c+1] += np.maximum(0, self.u[r,c+1]*g[r,c])*scaleCorrection
+                            if c > 0 and self.M[r,c-1] == 1:
+                                gp[r,c-1] += np.maximum(0, -1*self.u[r,c]*g[r,c])*scaleCorrection
+                            if r < self.rows-1 and self.M[r+1,c] == 1:
+                                gp[r+1,c] += np.maximum(0, self.v[r+1,c]*g[r,c])*scaleCorrection
+                            if r > 0 and self.M[r-1,c] == 1:
+                                gp[r-1,c] += np.maximum(0, -1*self.v[r,c]*g[r,c])*scaleCorrection
                         # gp[r,c] = gp[r,c] - min(gp[r,c], max(0, self.u[r,c]*g[r,c]) + max(0,-self.u[r,c-1]*g[r,c]) + max(0,self.v[r,c]*g[r,c]) + max(0,-self.v[r-1,c]*g[r,c]))
-                        gp[r,c] = gp[r,c] - totalOut*scaleCorrection
+                            gp[r,c] -= totalOut*scaleCorrection
 
                         if gp[r,c] < 0:
                             print("gp: {}".format(gp[r,c]))
-                self.g[:,:,k] = gp
+                self.g[:,:,k] = gp.copy()
 
 
     def TransferPigment(self):
         for k in range(self.numPigments):
-            (ro,omega,gamma) = self.pigmentParameters[k,-3:]
-
+            (ro,omega,gamma) = self.pigmentParameters[0,-3:]
+            maxdeltaup = 0
+            maxdeltadown = 0
             for r in range(self.rows):
                 for c in range(self.cols):
                     if self.M[r,c] == 1:
@@ -333,13 +359,41 @@ class Watercolor:
                             deltaUp = max(0, 1-self.g[r,c,k])
                         self.d[r,c,k] += deltaDown - deltaUp
                         self.g[r,c,k] += deltaUp - deltaDown
+                        maxdeltaup += deltaUp - deltaDown
+                        maxdeltadown += deltaDown - deltaUp
                         with np.printoptions(precision=3, suppress=True):
                             if self.d[r,c,k] < 0 or self.g[r,c,k] < 0:
                                 print("d: {:.3}, g: {:.3}, dUP: {:.3}, dDOWN: {:.3}".format(self.d[r,c,k], self.g[r,c,k], deltaUp, deltaDown))
-
+        # print("max deltaUp: {}, max deltaDown: {}".format(maxdeltaup,maxdeltadown))
     def SimulateCapillaryFlow(self):
+        # alpha = 0.5
+        # epsilon = 0.7
+        # delta = 0.1
+        # sigma = 0.7
 
-        pass
+        alpha = 0.9
+        epsilon = 0.9
+        delta = 0.1
+        sigma = 0.5
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.M[r,c] > 0:
+                    self.s[r,c] += max(0, min(alpha,self.c[r,c] - self.s[r,c]))
+        s = self.s.copy()
+        for r in range(self.rows):
+            for c in range(self.cols):
+                for (k,l) in [(r,c-1),(r,c+1),(r-1,c),(r-1,c-1),(r-1,c+1),(r+1,c-1),(r+1,c),(r+1,c+1)]:
+                    if k < 0 or k >= self.rows or l < 0 or l >= self.cols:
+                        continue
+                    if self.s[r,c] > epsilon and self.s[r,c] > self.s[k,l] and self.s[k,l] > delta:
+                        deltaS = max(0,min(self.s[r,c] - self.s[k,l], self.c[k,l] - self.s[k,l])/4)
+                        s[r,c] -= deltaS
+                        s[k,l] += deltaS
+        self.s = s.copy()
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.s[r,c] > sigma:
+                    self.M[r,c] = 1
 
     def ReadImageData(self,inputPath):
 
@@ -353,6 +407,7 @@ class Watercolor:
                         "pigmentconcentration",
                         "pigmentdeposited",
                         "watersaturation",
+                        "fluidholdingcapacity",
                         ]
         fileNames={type:None for type in imageTypes}
         for root, dirs, files in os.walk(inputPath):
@@ -386,11 +441,15 @@ class Watercolor:
             self.v = np.load(fileNames["yvelocity"])
             # print(self.v[0,:])
         ### p: pressure of the water
-        # if fileNames["waterpressure"] is not None:
-        self.p = np.zeros((rows,cols))
+        if fileNames["waterpressure"] is not None:
+            self.p = np.load(fileNames["waterpressure"])
         ### g: concentations of each pigment
         if fileNames["pigmentconcentration"] is not None:
             self.g = np.load(fileNames["pigmentconcentration"])
+            print("g shape: {}".format(self.g.shape))
+
+        if fileNames["watersaturation"] is not None:
+            self.s = np.load(fileNames["watersaturation"])
         ### d: deposited pigment
         # if fileNames["pigmentdeposited"] is not None:
         self.d = np.zeros((rows,cols,numPigments))
@@ -399,7 +458,12 @@ class Watercolor:
 
         ### s: water saturation
         # if fileNames["watersaturation"] is not None:
-        self.s = np.zeros((rows,cols))
+        # self.s = np.zeros((rows,cols))
+        # self.s = np.random.normal(0.5, 0.2,rows*cols).reshape((rows,cols))
+        # self.s[self.M == 0] = 0
+        cmin = 0.1
+        cmax = 0.3
+        self.c = self.h*(cmax-cmin)+cmin
 
 
 
@@ -415,40 +479,23 @@ class Watercolor:
         # print("x size: {}".format(x.shape))
         R1 = np.ones((rows,cols,3))
         T1 = np.zeros((rows,cols,3))
-        Rw = np.array([0.3,0.3,0.7])
-        Rb = np.array([0.25,0.25,0.6])
-        # a = 0.5*(Rw+(Rb-Rw+1)/Rb)
+        Rw = np.array([0.2,0.7,0.8])
+        Rb = np.array([0.1,0.01,0.6])
+        a = 0.5*(Rw+(Rb-Rw+1)/Rb)
         pigmentIndex = 0
         K = self.pigmentParameters[pigmentIndex,0:3]
         S = self.pigmentParameters[pigmentIndex,3:6]
-        a = (S+K)/S
+        # a = (S+K)/S
         # a = K/S + 1
         b = np.sqrt(a*a-1)
-        # trigTerm = (b*b-(a-Rw)*(a-1))/(b*(1-Rw))
-        # S = (1/b)*np.arccosh(trigTerm)/np.arcsinh(trigTerm)
-        # K = S*(a-1)
+        trigTerm = (b*b-(a-Rw)*(a-1))/(b*(1-Rw))
+        S = (1/b)*np.arccosh(trigTerm)/np.arcsinh(trigTerm)
+        K = S*(a-1)
 
         R2 = 0.9*np.ones((rows,cols,3))#canvas
 
         T2 = np.zeros((rows,cols,3))#canvas
         p = 0
-        # for row in range(rows):
-        #     for col in range(cols):
-        #         innerTerm = b*S*x[row,col,p]
-        #         if(np.any(np.abs(innerTerm) > 10)):
-        #             R1[row,col,:] = 0
-        #             T1[row,col,:] = 1
-        #         else:
-        #             aTerm = a*np.sinh(innerTerm)
-        #             bTerm = b*np.cosh(innerTerm)
-        #             c = aTerm + bTerm
-        #
-        #             R1[row,col,:] = np.sinh(innerTerm/c)
-        #             if np.any(R1[row,col,:] > 1):
-        #                 print("\t\t DANGER !!!")
-        #     # print("row: {},R: {}".format(row,R[row,0,:]))
-        #             T1[row,col,:] = b/c
-        # print("inner Term: {}".format(b*S*100))
         for row in range(rows):
             for col in range(cols):
                 innerTerm = b*S*x[row,col,p]
@@ -481,59 +528,34 @@ class Watercolor:
 
         return R2
 
-    def WriteImageData(self, im, inputPath):
-        cv2.imwrite(os.path.join(inputPath,"output.png"),cv2.resize(im,(500,500))*255)
+    def WriteImageData(self, im, inputPath,name="output"):
+        cv2.imwrite(os.path.join(inputPath, name + ".png"),cv2.resize(im,(500,500))*255)
 
 def testStroke(painting):
-    rows = painting.rows
-    cols = painting.cols
-    painting.g = 0*np.ones((rows,cols,1))
-    painting.g[int(rows/2),:,0] = 1
-    painting.g[:,int(cols/2),0] = 1
-
-    sinAngles = np.zeros((rows,cols))
-    cosAngles = np.zeros((rows,cols))
-    radiuses = np.zeros((rows,cols))
-    rh = int(rows/2)
-    ch = int(cols/2)
-    for r in range(rows):
-        for c in range(cols):
-            radiuses[r,c] = max(1,np.sqrt((r-rh)*(r-rh) + (c-ch)*(c-ch)))
-            # print("r: {}, rh: {}, c: {}, ch: {}, arcsin({}), arccos({}), radius: {}".format(r, rh, c, ch, (r-rh)/radiuses[r,c],(c-ch)/radiuses[r,c],radiuses[r,c]))
-            sinAngles[r,c] = np.arcsin((r-rh)/radiuses[r,c])
-            cosAngles[r,c] = np.arccos((c-ch)/radiuses[r,c])
-    painting.u = np.ones((rows,cols+1))
-    painting.v = np.ones((rows+1,cols))
-
-    painting.u[:,:-1] = np.sin(sinAngles)*radiuses/ch
-    painting.v[:-1,:] = -np.cos(cosAngles)*radiuses/rh
-    painting.u[np.isnan(painting.u)] = 0
-    painting.v[np.isnan(painting.v)] = 0
-    #
-    # painting.u *= -1
-    # painting.v *= -1
-
-    # print("u: {}".format(painting.u))
-    # print("v: {}".format(painting.v))
+    # painting.u = np.abs(painting.u)
+    # painting.v = np.abs(painting.v)
     return painting
 
 if __name__ == "__main__":
+
 
     # np.set_printoptions(precision=2)
     #arg for the folder with the input files to render
     #the input files have the wetnes mask and pigment info
     inputPath = sys.argv[1]
-
+    sys.path.append(os.path.join(inputPath))
+    import generateParameters
+    generateParameters.main(inputPath)
     ### M: wet area
     ### u,v: velocities in the x,y directions
     ### p: pressure of the water
     ### g: concentations of each pigment
     ### d: depositied pigment
     ### s: water saturation
-    firstPainting = Watercolor()
+    firstPainting = Watercolor(T=50)
     firstPainting.ReadImageData(inputPath)
 
-    # firstPainting = testStroke(firstPainting)
+    firstPainting = testStroke(firstPainting)
 
-    im = firstPainting.MainLoop()
-    firstPainting.WriteImageData(im, inputPath)
+    im = firstPainting.MainLoop(inputPath)
+    firstPainting.WriteImageData(im, inputPath,"output")

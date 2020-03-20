@@ -1,0 +1,12 @@
+Relax Divergence
+  change sign on epsilon
+  remove pressure change
+
+Move Pigment
+    g cannot be negative. When values are moved out of g, they need to be less than available g
+    only move if in wet area mask
+RenderLayers
+  misleading formula, R = sinh bSx/c is actually R=(sinh(bSx))/c
+
+Edge Darkening
+  eta to 0.1 rather than 0.01
